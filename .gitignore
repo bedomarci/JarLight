@@ -1,0 +1,5 @@
+.pio
+CMakeListsPrivate.txt
+
+# Project exclude paths
+/cmake-build-nanoatmega168/
