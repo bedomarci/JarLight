@@ -3,7 +3,7 @@
 #include <TaskScheduler.h>
 #include "LowPower.h"
 
-#define BTN_ONOFF 8
+#define BTN_ONOFF 2 //8
 #define BTN_MODE 4
 #define BTN_BRIGHTNESS_SPEED 7
 #define BTN_TIMER 12
@@ -31,8 +31,8 @@ int   ledEnabled[LED_NUM] = {0, 0, 0, 0, 0, 0};
 float ledOffset[LED_NUM]  = {0, 0, 0, 0, 0, 0};
 
 bool    power              = false;
-bool    timer              = false;
 bool    showTimer          = false;
+bool feedbackLedState = false;
 uint8_t fade               = 100;
 uint8_t selectedTimer      = 0;
 uint8_t selectedBrightness = 2;
@@ -55,6 +55,7 @@ void calculateOffset();
 
 void fill(int enabled);
 void bootAnimation();
+void feedback();
 
 Scheduler scheduler;
 Button    btnOnOff(BTN_ONOFF);
@@ -67,6 +68,7 @@ Task      tShowTimer(TASK_IMMEDIATE, TASK_ONCE, []() {
     showTimer = false;
     render();
 }, &scheduler);
+Task tFeedback(50, 6, &feedback, &scheduler);
 
 void setup() {
     Serial.begin(9600);
@@ -94,6 +96,7 @@ void bootAnimation() {
     fill(LOW);
     render();
     fade = 100;
+    shutDown();
 }
 
 void loop() {
@@ -123,7 +126,7 @@ void render() {
 }
 
 void wakeUp() {
-    timer = false;
+    selectedTimer = 0;
 }
 
 void readOnOff() {
@@ -133,18 +136,15 @@ void readOnOff() {
     if (power) {
         fill(HIGH);
         tRender.enable();
-
     } else {
         shutDown();
     }
-//    if (!power) {
-//        shutDown();
-//    }
 }
 
 void readMode() {
     btnMode.read();
     if (!btnMode.wasReleased()) return;
+    tFeedback.restart();
     mode = (mode == STATIC) ? SHINING : STATIC;
 
     switch (mode) {
@@ -162,6 +162,7 @@ void readMode() {
 void readBrightnessSpeed() {
     btnBrightnessSpeed.read();
     if (!btnBrightnessSpeed.wasReleased()) return;
+    tFeedback.restart();
     switch (mode) {
         case STATIC:
             selectedBrightness = (selectedBrightness + 1) % BRIGHTNESS_NUM;
@@ -176,15 +177,15 @@ void readBrightnessSpeed() {
 void readTimer() {
     btnTimer.read();
     if (!btnTimer.wasReleased()) return;
+    tFeedback.restart();
     selectedTimer = (selectedTimer + 1) % (TIMER_NUM + 1);
     showTimer = true;
     tShowTimer.restartDelayed(SHOW_TIMER_LENGTH);
     if (selectedTimer > 0) {
-        tTimer.restartDelayed(timerOption[selectedTimer - 1] * TASK_SECOND / 2);
+        tTimer.restartDelayed(timerOption[selectedTimer - 1] * TASK_MINUTE);
     } else {
         tTimer.disable();
     }
-    timer = true;
     render();
 }
 
@@ -203,12 +204,9 @@ void shutDown() {
     fill(LOW);
     render();
     tRender.disable();
-//    Serial.println(digitalPinToInterrupt(BTN_ONOFF));
-//    delay(10);
-//    attachInterrupt(digitalPinToInterrupt(BTN_ONOFF), wakeUp, LOW);
-//    LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
-//    detachInterrupt(digitalPinToInterrupt(BTN_ONOFF));
-    timer = false;
+    attachInterrupt(digitalPinToInterrupt(BTN_ONOFF), wakeUp, LOW);
+    LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
+    detachInterrupt(digitalPinToInterrupt(BTN_ONOFF));
 }
 
 void fill(int enabled) {
@@ -216,4 +214,12 @@ void fill(int enabled) {
         ledOffset[i]  = 0;
         ledEnabled[i] = !!enabled;
     }
+}
+
+void feedback() {
+    if (tFeedback.isFirstIteration()) {
+        feedbackLedState = false;
+    }
+    feedbackLedState = !feedbackLedState;
+    digitalWrite(LED_BUILTIN, feedbackLedState);
 }
